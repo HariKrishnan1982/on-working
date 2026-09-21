@@ -1,0 +1,178 @@
+version: "0.2.0"
+updated: "2026-09-18"
+description: "Deterministic risk engine rules with named bands, cross-signal inconsistency logic, and fail-closed status handling."
+
+# Named bands defined once and referenced by rules
+bands:
+  spoof_score:
+    clean: { min: 0.0, max: 0.30 }
+    low: { min: 0.40, max: 0.60 }
+    med: { min: 0.60, max: 0.85 }
+    high: { min: 0.85, max: 1.001 }
+
+  similarity_score:
+    fail: { min: 0.0, max: 0.40 }
+    weak: { min: 0.40, max: 0.65 }
+    match: { min: 0.65, max: 1.001 }
+    high_match: { min: 0.70, max: 1.001 }
+
+  scam_score:
+    benign: { min: 0.0, max: 0.30 }
+    suspicious: { min: 0.30, max: 0.50 }
+    med: { min: 0.50, max: 0.80 }
+    high: { min: 0.80, max: 1.001 }
+
+rules:
+  # ── Fail-Closed Status Rules (Degraded or missing evidence never yields ALLOW) ──
+
+  - id: STATUS_BRANCH_FAILED
+    description: "One or more analysis branches failed to complete"
+    condition:
+      type: status
+      match_any:
+        - field: spoof_result.status
+          equals: "failed"
+        - field: speaker_result.status
+          equals: "failed"
+        - field: intent_result.status
+          equals: "failed"
+    risk_level: HIGH
+    action: ESCALATE
+
+  - id: STATUS_INSUFFICIENT_AUDIO
+    description: "Audio duration or quality was insufficient for reliable analysis"
+    condition:
+      type: status
+      match_any:
+        - field: spoof_result.status
+          equals: "insufficient_audio"
+        - field: speaker_result.status
+          equals: "insufficient_audio"
+        - field: intent_result.status
+          equals: "insufficient_audio"
+    risk_level: MEDIUM
+    action: FLAG
+
+  - id: STATUS_NOT_ENROLLED
+    description: "Speaker is not enrolled; identity verification cannot be confirmed"
+    condition:
+      type: status
+      field: speaker_result.status
+      equals: "not_enrolled"
+    risk_level: MEDIUM
+    action: FLAG
+
+  # ── Individual Score Band Rules ──
+
+  - id: SPOOF_HIGH
+    description: "Audio highly likely spoofed / synthetic"
+    condition:
+      type: band
+      field: spoof_result.spoof_score
+      band: high
+    risk_level: CRITICAL
+    action: BLOCK
+
+  - id: SPOOF_MED
+    description: "Audio moderately likely spoofed"
+    condition:
+      type: band
+      field: spoof_result.spoof_score
+      band: med
+    risk_level: HIGH
+    action: ESCALATE
+
+  - id: SPOOF_LOW
+    description: "Audio slightly suspicious for acoustic artifacts"
+    condition:
+      type: band
+      field: spoof_result.spoof_score
+      band: low
+    risk_level: MEDIUM
+    action: FLAG
+
+  - id: SPEAKER_FAIL
+    description: "Speaker voice fails to match claimed identity"
+    condition:
+      type: band
+      field: speaker_result.similarity_score
+      band: fail
+    risk_level: HIGH
+    action: ESCALATE
+
+  - id: SPEAKER_WEAK
+    description: "Borderline speaker similarity match"
+    condition:
+      type: band
+      field: speaker_result.similarity_score
+      band: weak
+    risk_level: MEDIUM
+    action: FLAG
+
+  - id: SCAM_HIGH
+    description: "Transcript strongly indicates scam / coercion intent"
+    condition:
+      type: band
+      field: intent_result.scam_score
+      band: high
+    risk_level: HIGH
+    action: ESCALATE
+
+  - id: SCAM_MED
+    description: "Transcript moderately suspicious for social engineering"
+    condition:
+      type: band
+      field: intent_result.scam_score
+      band: med
+    risk_level: MEDIUM
+    action: FLAG
+
+  # ── Cross-Signal Inconsistency Rules ──
+
+  - id: INCON_SPOOF_MATCH
+    description: "High speaker match but audio looks spoofed — suspected sophisticated voice clone"
+    condition:
+      type: compound
+      all:
+        - field: spoof_result.spoof_score
+          operator: ">="
+          value: 0.60
+        - field: speaker_result.similarity_score
+          operator: ">="
+          value: 0.70
+    risk_level: CRITICAL
+    action: BLOCK
+
+  - id: INCON_CLEAN_SCAM
+    description: "Legitimate caller voice and clean acoustic audio, but predatory scam transcript"
+    condition:
+      type: compound
+      all:
+        - type: band
+          field: spoof_result.spoof_score
+          band: clean
+        - type: band
+          field: speaker_result.similarity_score
+          band: high_match
+        - type: band
+          field: intent_result.scam_score
+          band: high
+    risk_level: HIGH
+    action: ESCALATE
+
+  - id: INCON_ALL_MODERATE
+    description: "All signals borderline across branches — uncertainty requires human analyst escalation"
+    condition:
+      type: compound
+      all:
+        - type: band
+          field: spoof_result.spoof_score
+          band: low
+        - type: band
+          field: speaker_result.similarity_score
+          band: weak
+        - type: band
+          field: intent_result.scam_score
+          band: med
+    risk_level: HIGH
+    action: ESCALATE

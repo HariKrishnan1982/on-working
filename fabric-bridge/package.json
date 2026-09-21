@@ -1,0 +1,31 @@
+{
+  "name": "fabric-bridge",
+  "version": "1.0.0",
+  "description": "Secure REST API Gateway to Hyperledger Fabric Network for Voice Fraud Detection",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts",
+    "test": "mocha -r ts-node/register test/**/*.test.ts --timeout 10000 --exit"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.1",
+    "@hyperledger/fabric-gateway": "^1.4.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.1.5",
+    "json-stringify-deterministic": "^1.0.12"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.24",
+    "@types/supertest": "^6.0.2",
+    "chai": "^4.4.1",
+    "mocha": "^10.3.0",
+    "supertest": "^6.3.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

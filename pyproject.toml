@@ -1,0 +1,54 @@
+[project]
+name = "voice-fraud-detection"
+version = "0.1.0"
+description = "Multi-branch voice fraud detection system with explainable risk decisions"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.0.0",
+    "speechbrain>=0.5.16",
+    "librosa>=0.10.0",
+    "faster-whisper>=0.9.0",
+    "silero-vad>=3.0",
+]
+db = [
+    "psycopg2-binary>=2.9.0",
+    "sqlalchemy>=2.0.0",
+]
+mcp = [
+    "mcp>=0.1.0",
+]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.24.0",
+]
+dev = [
+    "voice-fraud-detection[test]",
+    "flake8>=6.0",
+    "black>=23.0",
+    "isort>=5.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "fabric: marks integration tests requiring a live Hyperledger Fabric test-network",
+]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100

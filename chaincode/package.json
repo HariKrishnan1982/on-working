@@ -1,0 +1,35 @@
+{
+  "name": "voice-fraud-chaincode",
+  "version": "1.0.0",
+  "description": "Hyperledger Fabric Smart Contracts for Voice Fraud Detection System",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "fabric-chaincode-node start",
+    "test": "mocha -r ts-node/register test/**/*.test.ts --timeout 10000 --exit"
+  },
+  "dependencies": {
+    "fabric-contract-api": "^2.5.4",
+    "fabric-shim": "^2.5.4",
+    "json-stringify-deterministic": "^1.0.12"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.14",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.24",
+    "@types/sinon": "^17.0.3",
+    "@types/sinon-chai": "^3.2.12",
+    "chai": "^4.4.1",
+    "mocha": "^10.3.0",
+    "sinon": "^17.0.1",
+    "sinon-chai": "^3.7.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

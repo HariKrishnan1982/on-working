@@ -1,0 +1,52 @@
+{
+  "description": "Standardized test vectors for cross-language canonical decision and consent hashing. Must yield identical hashes in Python, TypeScript/Node.js, and Hyperledger Fabric.",
+  "vectors": [
+    {
+      "name": "vector_1_block_clone_attack",
+      "payload": {
+        "action": "BLOCK",
+        "caller_id": "+919876543210",
+        "fired_rules": [
+          "INCON_SPOOF_MATCH",
+          "SPOOF_HIGH"
+        ],
+        "model_versions_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "risk_level": "CRITICAL",
+        "rules_version": "0.2.0:abcdef123456",
+        "scores": {
+          "scam_score": "0.100",
+          "similarity_score": "0.850",
+          "spoof_score": "0.850"
+        },
+        "session_id": "sess-vector-001"
+      },
+      "canonical_json": "{\"action\":\"BLOCK\",\"caller_id\":\"+919876543210\",\"fired_rules\":[\"INCON_SPOOF_MATCH\",\"SPOOF_HIGH\"],\"model_versions_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"risk_level\":\"CRITICAL\",\"rules_version\":\"0.2.0:abcdef123456\",\"scores\":{\"scam_score\":\"0.100\",\"similarity_score\":\"0.850\",\"spoof_score\":\"0.850\"},\"session_id\":\"sess-vector-001\"}",
+      "expected_sha256": "4d832af96e9c306a3b0e4ccabe707c363d576361a27d513c08b3ec417d7cd2e1"
+    },
+    {
+      "name": "vector_2_allow_clean_call",
+      "payload": {
+        "action": "ALLOW",
+        "caller_id": "+911234567890",
+        "fired_rules": [],
+        "model_versions_hash": "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e",
+        "risk_level": "LOW",
+        "rules_version": "0.2.0:abcdef123456",
+        "scores": {
+          "scam_score": "0.050",
+          "similarity_score": "0.920",
+          "spoof_score": "0.050"
+        },
+        "session_id": "sess-vector-002"
+      },
+      "canonical_json": "{\"action\":\"ALLOW\",\"caller_id\":\"+911234567890\",\"fired_rules\":[],\"model_versions_hash\":\"a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e\",\"risk_level\":\"LOW\",\"rules_version\":\"0.2.0:abcdef123456\",\"scores\":{\"scam_score\":\"0.050\",\"similarity_score\":\"0.920\",\"spoof_score\":\"0.050\"},\"session_id\":\"sess-vector-002\"}",
+      "expected_sha256": "292d227c76a9553695c6ba7186ec689e845c47e1d201f8e69d6e0093f2106e77"
+    },
+    {
+      "name": "vector_3_hmac_pseudonymous_subject",
+      "subject_id": "+919876543210",
+      "hmac_secret": "vfd-test-secret-salt-2026",
+      "expected_subject_ref": "317a0a80999d4b55315aac7fcb6838f0f42eef7f1e964ae284951803ce904c2a"
+    }
+  ]
+}

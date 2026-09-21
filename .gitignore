@@ -1,0 +1,50 @@
+# Environment & Secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Crypto material & Blockchain credentials
+*.pem
+*.key
+*.crt
+*.csr
+wallet/
+keystore/
+msp/
+crypto-config/
+secrets/
+*.id
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node.js & Chaincode
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary databases & storage
+/data/
+/encrypted_storage/
+pg_test_*

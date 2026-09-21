@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voice_fraud
+      POSTGRES_USER: vfd
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vfd -d voice_fraud"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      VFD_DATABASE_URL: postgresql://vfd:${POSTGRES_PASSWORD:-changeme}@postgres:5432/voice_fraud
+      VFD_API_KEY: ${VFD_API_KEY:-vfd-dev-secret-key-12345}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+
+volumes:
+  pgdata:
