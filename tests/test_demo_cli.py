@@ -23,15 +23,13 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEMO_SCRIPT = PROJECT_ROOT / "demo.py"
-UV_EXE = Path(r"C:\Users\PRAYAG S\.local\bin\uv.exe")
-
 BONAFIDE_WAV = PROJECT_ROOT / "test_vectors" / "audio" / "bonafide_sample.wav"
 SCAM_WAV = PROJECT_ROOT / "test_vectors" / "audio" / "scam_sample.wav"
 
 
 def _run_demo(*args: str, timeout: int = 180) -> subprocess.CompletedProcess:
-    """Run demo.py via uv and capture output."""
-    cmd = [str(UV_EXE), "run", "python", str(DEMO_SCRIPT), *args]
+    """Run demo.py and capture output."""
+    cmd = [sys.executable, str(DEMO_SCRIPT), *args]
     return subprocess.run(
         cmd,
         capture_output=True,

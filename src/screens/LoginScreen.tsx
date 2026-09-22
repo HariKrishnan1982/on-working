@@ -126,10 +126,22 @@ export default function LoginScreen({ navigate }: { navigate: NavigateFn }) {
           </div>
         </div>
 
-        {/* Demo hint */}
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#2a3a58', marginTop: 16 }}>
-          Demo prototype — use any credentials to proceed
-        </p>
+        {/* Demo gate — explicit: no real authentication exists on the backend */}
+        <div style={{
+          marginTop: 16, padding: '10px 14px', borderRadius: 8, textAlign: 'center',
+          background: '#0a1428', border: '1px solid #f5a02040',
+        }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+            color: '#f5a020', background: '#2a1e06', border: '1px solid #f5a02050',
+            padding: '2px 7px', borderRadius: 4,
+          }}>
+            DEMO GATE — NO REAL AUTH
+          </span>
+          <p style={{ fontSize: 11, color: '#6280b8', margin: '8px 0 0' }}>
+            Any credentials proceed. The backend has a shared API key, not user accounts.
+          </p>
+        </div>
       </div>
     </div>
   );

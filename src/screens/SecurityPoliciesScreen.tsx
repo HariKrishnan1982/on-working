@@ -1,16 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { NavigateFn } from '../App';
 import { PageHeader, Card } from '../components/ui';
+import { listPolicies, type PolicyItem } from '../lib/api';
 
-interface PolicyRule {
-  id: string;
-  name: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  conditions: { field: string; op: string; value: string }[];
-  actions: string[];
-  enabled: boolean;
-}
-
-const policies: PolicyRule[] = [
+const FALLBACK_POLICIES: PolicyItem[] = [
   {
     id: 'POL-001', name: 'Critical Risk Policy', severity: 'critical', enabled: true,
     conditions: [
@@ -18,46 +11,29 @@ const policies: PolicyRule[] = [
       { field: 'Deepfake Probability', op: '>', value: '70%' },
     ],
     actions: ['Block Call', 'Create Critical Alert', 'Record Blockchain Audit', 'Notify Security Team'],
+    risk_level: 'CRITICAL', action: 'BLOCK',
   },
   {
     id: 'POL-002', name: 'High Risk Policy', severity: 'high', enabled: true,
-    conditions: [
-      { field: 'Risk Score', op: 'between', value: '60 – 79' },
-    ],
+    conditions: [{ field: 'Risk Score', op: 'between', value: '60 – 79' }],
     actions: ['Require MFA Verification', 'Request Callback Confirmation', 'Create Security Alert', 'Increase Monitoring'],
+    risk_level: 'HIGH', action: 'ESCALATE',
   },
   {
     id: 'POL-003', name: 'Medium Risk Policy', severity: 'medium', enabled: true,
-    conditions: [
-      { field: 'Risk Score', op: 'between', value: '30 – 59' },
-    ],
+    conditions: [{ field: 'Risk Score', op: 'between', value: '30 – 59' }],
     actions: ['Flag for Review', 'Enhanced Monitoring', 'Log Event', 'Request Additional Context'],
+    risk_level: 'MEDIUM', action: 'FLAG',
   },
   {
     id: 'POL-004', name: 'Low Risk Policy', severity: 'low', enabled: true,
-    conditions: [
-      { field: 'Risk Score', op: '<', value: '30' },
-    ],
+    conditions: [{ field: 'Risk Score', op: '<', value: '30' }],
     actions: ['Allow Call', 'Continue Real-Time Monitoring', 'Log Verified Event'],
-  },
-  {
-    id: 'POL-005', name: 'Deepfake Override Policy', severity: 'critical', enabled: true,
-    conditions: [
-      { field: 'Deepfake Probability', op: '>', value: '85%' },
-    ],
-    actions: ['Immediate Block', 'Alert SOC Team', 'Trigger Incident Response', 'Record Evidence'],
-  },
-  {
-    id: 'POL-006', name: 'Adversarial Evasion Policy', severity: 'critical', enabled: false,
-    conditions: [
-      { field: 'Adversarial Score', op: '>', value: '70%' },
-      { field: 'Identity Confidence', op: '<', value: '40%' },
-    ],
-    actions: ['Block Call', 'Isolate Session', 'Full Forensic Capture'],
+    risk_level: 'LOW', action: 'ALLOW',
   },
 ];
 
-const SEVERITY_COLORS = {
+const SEVERITY_COLORS: Record<string, { color: string; bg: string; border: string; label: string }> = {
   critical: { color: '#f03838', bg: '#2a0808', border: '#f0383840', label: 'CRITICAL' },
   high:     { color: '#f07228', bg: '#2a1408', border: '#f0723040', label: 'HIGH' },
   medium:   { color: '#f5a020', bg: '#2a1e06', border: '#f5a02040', label: 'MEDIUM' },
@@ -92,9 +68,35 @@ function ActionChip({ action }: { action: string }) {
 }
 
 export default function SecurityPoliciesScreen({ navigate: _navigate }: { navigate: NavigateFn }) {
+  const [policies, setPolicies] = useState<PolicyItem[]>(FALLBACK_POLICIES);
+  const [version, setVersion] = useState<string>('offline demo');
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listPolicies()
+      .then(d => {
+        if (cancelled) return;
+        if (d.policies.length > 0) setPolicies(d.policies);
+        setVersion(d.version ?? 'unknown');
+        setLive(true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div>
-      <PageHeader title="Security Policies" subtitle="Deterministic enforcement rules for the Unified Risk Engine.">
+      <PageHeader title="Security Policies" subtitle={`Deterministic enforcement rules for the Unified Risk Engine · ${version}`}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+          color: live ? '#20d870' : '#f5a020',
+          background: live ? '#082010' : '#2a1e06',
+          border: `1px solid ${live ? '#20d87050' : '#f5a02050'}`,
+          padding: '2px 8px', borderRadius: 4,
+        }}>
+          {live ? `● LIVE · ${version}` : '○ DEMO DATA'}
+        </span>
         <div style={{ fontSize: 12, color: '#3a4e78' }}>
           {policies.filter(p => p.enabled).length} active · {policies.filter(p => !p.enabled).length} disabled
         </div>
@@ -102,7 +104,7 @@ export default function SecurityPoliciesScreen({ navigate: _navigate }: { naviga
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {policies.map(policy => {
-          const sc = SEVERITY_COLORS[policy.severity];
+          const sc = SEVERITY_COLORS[policy.severity] ?? SEVERITY_COLORS.medium;
           return (
             <Card key={policy.id} style={{ padding: '18px 20px', borderLeft: `3px solid ${sc.color}`, opacity: policy.enabled ? 1 : 0.55 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -116,13 +118,19 @@ export default function SecurityPoliciesScreen({ navigate: _navigate }: { naviga
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#3a4e78' }}>{policy.id}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: policy.enabled ? '#20d870' : '#3a4e78', fontWeight: 600 }}>
+                  <span
+                    title="Demo only: rules deploy via rules.yaml, no toggle endpoint exists"
+                    style={{ fontSize: 11, color: policy.enabled ? '#20d870' : '#3a4e78', fontWeight: 600 }}
+                  >
                     {policy.enabled ? '● ENABLED' : '○ DISABLED'}
                   </span>
-                  <button style={{
-                    fontSize: 11, color: '#6280b8', background: '#0e1838',
-                    border: '1px solid #18234a', borderRadius: 4, padding: '3px 10px', cursor: 'pointer',
-                  }}>Edit</button>
+                  <button
+                    disabled
+                    title="Demo only: no rule-edit endpoint exists"
+                    style={{
+                      fontSize: 11, color: '#3a4e78', background: 'transparent',
+                      border: '1px dashed #28384a', borderRadius: 4, padding: '3px 10px', cursor: 'not-allowed',
+                    }}>Edit</button>
                 </div>
               </div>
 
@@ -144,7 +152,7 @@ export default function SecurityPoliciesScreen({ navigate: _navigate }: { naviga
               {/* Actions */}
               <div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: '#3a4e78', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
-                  THEN execute:
+                  THEN execute ({policy.risk_level} → {policy.action}):
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {policy.actions.map((a, i) => <ActionChip key={i} action={a} />)}
@@ -153,6 +161,22 @@ export default function SecurityPoliciesScreen({ navigate: _navigate }: { naviga
             </Card>
           );
         })}
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginTop: 16,
+        padding: '10px 14px', borderRadius: 8, background: '#0a1428', border: '1px solid #18234a',
+      }}>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+          color: '#f5a020', background: '#2a1e06', border: '1px solid #f5a02050',
+          padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap',
+        }}>
+          DEMO — NON-FUNCTIONAL MOCKUP
+        </span>
+        <span style={{ fontSize: 11, color: '#6280b8' }}>
+          Rule cards are live reads of risk_engine/rules.yaml. Toggles and Edit buttons are demo-only — no rule-write endpoint exists.
+        </span>
       </div>
     </div>
   );

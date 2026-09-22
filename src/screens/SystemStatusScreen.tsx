@@ -1,34 +1,18 @@
+import { useEffect, useState } from 'react';
 import type { NavigateFn } from '../App';
 import { PageHeader, Card, SectionTitle } from '../components/ui';
+import { getSystemStatus, type SystemStatusResponse } from '../lib/api';
 
-interface Service {
-  name: string;
-  status: 'ONLINE' | 'OFFLINE' | 'DEGRADED';
-  latency?: number;
-  version?: string;
-  uptime?: string;
-}
-
-const services: Service[] = [
-  { name: 'Voice Engine', status: 'ONLINE', latency: 42, version: 'v3.2.1', uptime: '14d 06h' },
-  { name: 'Deepfake Detector', status: 'ONLINE', latency: 88, version: 'v2.8.4', uptime: '14d 06h' },
-  { name: 'Context Agent', status: 'ONLINE', latency: 31, version: 'v1.6.0', uptime: '14d 06h' },
-  { name: 'Behavior Agent', status: 'ONLINE', latency: 27, version: 'v1.4.2', uptime: '14d 06h' },
-  { name: 'Adversarial Agent', status: 'ONLINE', latency: 55, version: 'v1.1.8', uptime: '14d 06h' },
-  { name: 'MCP Server', status: 'ONLINE', latency: 8, version: 'v4.0.2', uptime: '14d 06h' },
-  { name: 'Risk Engine', status: 'ONLINE', latency: 12, version: 'v2.3.7', uptime: '14d 06h' },
-  { name: 'PostgreSQL', status: 'ONLINE', latency: 4, version: '16.3', uptime: '14d 06h' },
-  { name: 'Hyperledger Fabric', status: 'ONLINE', latency: 95, version: 'v2.5.4', uptime: '14d 06h' },
-  { name: 'JWT Auth Service', status: 'ONLINE', latency: 6, version: 'v1.9.0', uptime: '14d 06h' },
-];
-
-const apiMetrics = [
-  { label: 'API Gateway', status: 'Healthy' as const, value: '● Healthy' },
-  { label: 'Avg Response Time', value: '142 ms' },
-  { label: 'Active Connections', value: '37' },
-  { label: 'Requests / Min', value: '284' },
-  { label: 'Error Rate', value: '0.02%' },
-  { label: 'TLS Version', value: 'TLS 1.3' },
+const FALLBACK_SERVICES = [
+  { name: 'Gateway API', status: 'ONLINE', latency: 1, version: 'v0.2.0', uptime: 'running' },
+  { name: 'Voice Engine (Preprocess + VAD)', status: 'ONLINE', latency: 42, version: 'silero-vad-6.2.2', uptime: 'ready' },
+  { name: 'Anti-Spoofing (AASIST)', status: 'ONLINE', latency: 38, version: 'aasist-asvspoof2019-v0', uptime: 'ready' },
+  { name: 'Speaker Verification (ECAPA-TDNN)', status: 'ONLINE', latency: 55, version: 'ecapa-tdnn-voxceleb-v0', uptime: 'ready' },
+  { name: 'ASR & Intent (Faster-Whisper)', status: 'OFFLINE', latency: 0, version: 'faster-whisper-base', uptime: 'missing weights' },
+  { name: 'Risk Engine (rules.yaml)', status: 'ONLINE', latency: 1, version: 'rules', uptime: 'ready' },
+  { name: 'PostgreSQL Audit Chain', status: 'OFFLINE', latency: 0, version: 'PG16', uptime: 'unreachable' },
+  { name: 'Fabric Bridge (Blockchain)', status: 'OFFLINE', latency: 0, version: 'REST v1', uptime: 'unreachable' },
+  { name: 'Enrollment Store (Encrypted)', status: 'ONLINE', latency: 2, version: 'Fernet AES-128-CBC', uptime: 'ready' },
 ];
 
 function StatusDot({ status }: { status: string }) {
@@ -41,7 +25,8 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function LatencyBar({ ms }: { ms: number }) {
+function LatencyBar({ ms }: { ms: number | null | undefined }) {
+  if (ms == null) return <span style={{ fontSize: 11, color: '#3a4e78' }}>—</span>;
   const pct = Math.min(ms / 200, 1) * 100;
   const color = ms < 50 ? '#20d870' : ms < 100 ? '#f5a020' : '#f07228';
   return (
@@ -49,17 +34,60 @@ function LatencyBar({ ms }: { ms: number }) {
       <div style={{ width: 60, height: 3, background: '#18234a', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
       </div>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#6280b8' }}>{ms}ms</span>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#6280b8' }}>
+        {ms < 10 ? ms.toFixed(1) : Math.round(ms)}ms
+      </span>
     </div>
   );
 }
 
+function fmtCount(n: number | null | undefined): string {
+  return n == null ? '— (db offline)' : String(n);
+}
+
 export default function SystemStatusScreen({ navigate: _navigate }: { navigate: NavigateFn }) {
-  const allOnline = services.every(s => s.status === 'ONLINE');
+  const [data, setData] = useState<SystemStatusResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSystemStatus().then(d => { if (!cancelled) setData(d); }).catch(() => {});
+    const id = setInterval(() => {
+      getSystemStatus().then(d => { if (!cancelled) setData(d); }).catch(() => {});
+    }, 30000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const services = data?.services ?? FALLBACK_SERVICES;
+  const apiMetrics = data?.apiMetrics ?? [
+    { endpoint: 'GET /health', method: 'GET', status: 200 },
+    { endpoint: 'GET /api/v1/sessions', method: 'GET', status: 200 },
+    { endpoint: 'GET /api/v1/audit', method: 'GET', status: 200 },
+  ];
+  const stack = data?.stack ?? [
+    { name: 'Python', version: '3.11' },
+    { name: 'FastAPI', version: '0.141' },
+    { name: 'PyTorch', version: '2.9 CPU' },
+    { name: 'Hyperledger Fabric', version: '2.5' },
+    { name: 'PostgreSQL', version: '16' },
+    { name: 'React', version: '19' },
+  ];
+  const onlineCount = services.filter(s => s.status === 'ONLINE').length;
+  const allOnline = onlineCount === services.length;
+  const checkedAt = data ? new Date(data.backend.timestamp).toLocaleTimeString('en-US', { hour12: false }) : null;
 
   return (
     <div>
-      <PageHeader title="System Status" subtitle="Real-time health monitoring of all VoiceShield components." />
+      <PageHeader title="System Status" subtitle="Real-time health monitoring of all VoiceShield components.">
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+          color: data ? '#20d870' : '#f5a020',
+          background: data ? '#082010' : '#2a1e06',
+          border: `1px solid ${data ? '#20d87050' : '#f5a02050'}`,
+          padding: '2px 8px', borderRadius: 4,
+        }}>
+          {data ? '● LIVE PROBES' : '○ DEMO DATA'}
+        </span>
+      </PageHeader>
 
       {/* Overall banner */}
       <div style={{
@@ -89,14 +117,37 @@ export default function SystemStatusScreen({ navigate: _navigate }: { navigate: 
             {allOnline ? 'All Systems Operational' : 'Partial Degradation Detected'}
           </div>
           <div style={{ fontSize: 12, color: '#6280b8' }}>
-            {services.length} services monitored · Last checked: 10:46:52 UTC
+            {services.length} services monitored
+            {checkedAt ? ` · Last checked: ${checkedAt} UTC` : ' · backend unreachable'}
+            {data ? ` · DB: ${data.backend.database} · Fabric: ${data.backend.fabric_bridge}` : ''}
           </div>
         </div>
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: '#20d870' }}>100%</div>
-          <div style={{ fontSize: 11, color: '#3a4e78' }}>uptime this month</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: allOnline ? '#20d870' : '#f07228' }}>
+            {onlineCount}/{services.length}
+          </div>
+          <div style={{ fontSize: 11, color: '#3a4e78' }}>services online</div>
         </div>
       </div>
+
+      {/* Fabric / outbox strip — real anchor counts, never faked green */}
+      <Card style={{ padding: '12px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#3a4e78' }}>
+            Fabric bridge: <span style={{
+              fontFamily: "'JetBrains Mono', monospace", fontWeight: 700,
+              color: data?.backend.fabric_bridge === 'online' ? '#20d870' : '#f03838',
+            }}>{data ? data.backend.fabric_bridge.toUpperCase() : 'UNKNOWN (offline demo)'}</span>
+          </span>
+          <span style={{ fontSize: 11, color: '#3a4e78' }}>
+            Outbox anchor_pending: <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: '#f5a020' }}>{data ? fmtCount(data.backend.outbox_pending) : '—'}</span>
+          </span>
+          <span style={{ fontSize: 11, color: '#3a4e78' }}>
+            Outbox anchored: <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: '#20d870' }}>{data ? fmtCount(data.backend.outbox_anchored) : '—'}</span>
+          </span>
+          <span style={{ fontSize: 11, color: '#3a4e78' }}>Live Fabric network deferred — OFFLINE here is the true state, not an error.</span>
+        </div>
+      </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20 }}>
         {/* Services table */}
@@ -127,7 +178,7 @@ export default function SystemStatusScreen({ navigate: _navigate }: { navigate: 
                 <span style={{ fontSize: 13, color: '#d5dffa' }}>{svc.name}</span>
               </div>
               <StatusDot status={svc.status} />
-              {svc.latency !== undefined ? <LatencyBar ms={svc.latency} /> : <span />}
+              <LatencyBar ms={svc.latency} />
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#3a4e78' }}>{svc.version}</span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#6280b8' }}>{svc.uptime}</span>
             </div>
@@ -139,41 +190,34 @@ export default function SystemStatusScreen({ navigate: _navigate }: { navigate: 
           <Card style={{ padding: '16px 18px' }}>
             <SectionTitle>API Health</SectionTitle>
             {apiMetrics.map(m => (
-              <div key={m.label} style={{
+              <div key={m.endpoint} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 padding: '7px 0', borderBottom: '1px solid #0e1838',
               }}>
-                <span style={{ fontSize: 12, color: '#3a4e78' }}>{m.label}</span>
+                <span style={{ fontSize: 12, color: '#3a4e78' }}>{m.endpoint}</span>
                 <span style={{
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 12, fontWeight: 600,
-                  color: m.label === 'API Gateway' ? '#20d870' : '#d5dffa',
-                }}>{m.value}</span>
+                  color: m.status === 200 ? '#20d870' : '#f03838',
+                }}>{m.status}</span>
               </div>
             ))}
+            <div style={{ fontSize: 10, color: '#3a4e78', marginTop: 8 }}>
+              Per-endpoint latencies are not measured server-side, so none are shown.
+            </div>
           </Card>
 
           <Card style={{ padding: '16px 18px' }}>
             <SectionTitle>Technology Stack</SectionTitle>
-            {[
-              { cat: 'Backend', items: ['Python / FastAPI', 'PyTorch', 'Wav2Vec2', 'RawNet2', 'Librosa'] },
-              { cat: 'Security', items: ['JWT / RBAC', 'TLS 1.3', 'MCP Server'] },
-              { cat: 'Data', items: ['PostgreSQL 16', 'Hyperledger Fabric 2.5'] },
-              { cat: 'Frontend', items: ['React 19', 'Recharts'] },
-              { cat: 'Infrastructure', items: ['Docker', 'Multi-agent Python'] },
-            ].map(g => (
-              <div key={g.cat} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#2a3a60', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 5 }}>{g.cat}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {g.items.map(item => (
-                    <span key={item} style={{
-                      fontSize: 11, color: '#6280b8', background: '#080e28',
-                      border: '1px solid #18234a', padding: '2px 8px', borderRadius: 4,
-                    }}>{item}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {stack.map(item => (
+                <span key={item.name} style={{
+                  fontSize: 11, color: '#6280b8', background: '#080e28',
+                  border: '1px solid #18234a', padding: '2px 8px', borderRadius: 4,
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}>{item.name} {item.version}</span>
+              ))}
+            </div>
           </Card>
         </div>
       </div>

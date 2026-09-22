@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import type { NavigateFn } from '../App';
+import type { NavigateFn, Selection } from '../App';
 import { MetricCard, PageHeader, RiskBadge, ActionBadge, Card, SectionTitle } from '../components/ui';
+import { checkHealth, getDashboardSummary, type DashboardSummary } from '../lib/api';
 
-const riskChartData = [
+const FALLBACK_CHART = [
   { time: '10:00', risk: 18, calls: 3 },
   { time: '10:05', risk: 24, calls: 5 },
   { time: '10:10', risk: 31, calls: 4 },
@@ -17,13 +19,13 @@ const riskChartData = [
   { time: '10:46', risk: 38, calls: 4 },
 ];
 
-const recentEvents = [
-  { time: '10:42', caller: 'User 104', risk: 92, detection: 'Voice Clone', action: 'BLOCKED' },
-  { time: '10:39', caller: 'User 087', risk: 68, detection: 'Suspicious Context', action: 'MFA' },
-  { time: '10:31', caller: 'User 221', risk: 24, detection: 'Verified', action: 'ALLOWED' },
-  { time: '10:25', caller: 'User 112', risk: 81, detection: 'Deepfake Signal', action: 'BLOCKED' },
-  { time: '10:18', caller: 'User 345', risk: 44, detection: 'Behavior Anomaly', action: 'MFA' },
-  { time: '10:11', caller: 'User 078', risk: 17, detection: 'Verified', action: 'ALLOWED' },
+const FALLBACK_EVENTS = [
+  { time: '10:42', caller: 'User 104', risk: 92, detection: 'Voice Clone', action: 'BLOCKED', session_id: 'CALL-1042' },
+  { time: '10:39', caller: 'User 087', risk: 68, detection: 'Suspicious Context', action: 'MFA', session_id: 'CALL-1038' },
+  { time: '10:31', caller: 'User 221', risk: 24, detection: 'Verified', action: 'ALLOWED', session_id: 'CALL-1041' },
+  { time: '10:25', caller: 'User 112', risk: 81, detection: 'Deepfake Signal', action: 'BLOCKED', session_id: 'CALL-1035' },
+  { time: '10:18', caller: 'User 345', risk: 44, detection: 'Behavior Anomaly', action: 'MFA', session_id: 'CALL-1039' },
+  { time: '10:11', caller: 'User 078', risk: 17, detection: 'Verified', action: 'ALLOWED', session_id: 'CALL-1033' },
 ];
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
@@ -40,25 +42,52 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export default function DashboardScreen({ navigate }: { navigate: NavigateFn }) {
+export default function DashboardScreen({ navigate, selection }: { navigate: NavigateFn; selection: Selection }) {
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [gatewayOnline, setGatewayOnline] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDashboardSummary().then(d => { if (!cancelled) setSummary(d); }).catch(() => {});
+    checkHealth().then(() => { if (!cancelled) setGatewayOnline(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const live = summary !== null;
+  const events = live && summary.recent_events.length > 0 ? summary.recent_events : FALLBACK_EVENTS;
+  // No timeseries endpoint exists: plot the real recent-event risk points when live.
+  const chart = live && summary.recent_events.length > 0
+    ? summary.recent_events.slice().reverse().map(e => ({ time: e.time, risk: e.risk, calls: 1 }))
+    : FALLBACK_CHART;
+
   return (
     <div>
       <PageHeader
         title="Security Overview"
         subtitle="Real-time monitoring of protected voice interactions."
-      />
+      >
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+          color: gatewayOnline ? '#20d870' : '#f5a020',
+          background: gatewayOnline ? '#082010' : '#2a1e06',
+          border: `1px solid ${gatewayOnline ? '#20d87050' : '#f5a02050'}`,
+          padding: '2px 8px', borderRadius: 4,
+        }}>
+          {gatewayOnline ? '● GATEWAY LIVE' : '○ GATEWAY OFFLINE — DEMO DATA'}
+        </span>
+      </PageHeader>
 
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
-        <MetricCard label="Active Calls" value={12} sub="Live sessions" accent="#4080f8" onClick={() => navigate('live-calls')} />
-        <MetricCard label="Calls Analyzed" value="1,248" sub="Last 24h" />
-        <MetricCard label="Threats Detected" value={27} sub="Today" accent="#f07228" />
-        <MetricCard label="Calls Blocked" value={9} sub="Today" accent="#f03838" />
+        <MetricCard label="Active Calls" value={summary?.active_calls ?? 12} sub="Live sessions" accent="#4080f8" onClick={() => navigate('live-calls')} />
+        <MetricCard label="Calls Analyzed" value={summary?.total_sessions ?? '1,248'} sub={summary ? 'this gateway process' : 'Last 24h (demo)'} />
+        <MetricCard label="Threats Detected" value={summary?.threats_detected ?? 27} sub="HIGH / CRITICAL" accent="#f07228" />
+        <MetricCard label="Calls Blocked" value={summary?.calls_blocked ?? 9} sub="BLOCK actions" accent="#f03838" />
         <MetricCard
           label="Gateway Status"
-          value="ONLINE"
-          sub="All systems nominal"
-          accent="#20d870"
+          value={gatewayOnline ? 'ONLINE' : 'OFFLINE'}
+          sub={gatewayOnline ? 'All systems nominal' : 'Demo data shown'}
+          accent={gatewayOnline ? '#20d870' : '#f5a020'}
         />
       </div>
 
@@ -67,7 +96,7 @@ export default function DashboardScreen({ navigate }: { navigate: NavigateFn }) 
         <SectionTitle>Real-Time Risk Monitoring</SectionTitle>
         <div style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={riskChartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <AreaChart data={chart} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#4080f8" stopOpacity={0.3} />
@@ -127,14 +156,14 @@ export default function DashboardScreen({ navigate }: { navigate: NavigateFn }) 
             <span key={h} style={{ fontSize: 10, fontWeight: 600, color: '#3a4e78', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</span>
           ))}
         </div>
-        {recentEvents.map((ev, i) => (
+        {events.map((ev, i) => (
           <div
-            key={i}
-            onClick={() => navigate('alert-detail')}
+            key={`${ev.session_id}-${i}`}
+            onClick={() => selection.openSession(ev.session_id)}
             style={{
               display: 'grid', gridTemplateColumns: '80px 1fr 80px 1fr 120px',
               padding: '11px 20px',
-              borderBottom: i < recentEvents.length - 1 ? '1px solid #0e1838' : 'none',
+              borderBottom: i < events.length - 1 ? '1px solid #0e1838' : 'none',
               cursor: 'pointer', transition: 'background 0.12s',
               alignItems: 'center',
             }}

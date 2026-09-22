@@ -1,5 +1,7 @@
-import type { NavigateFn } from '../App';
+import { useEffect, useState } from 'react';
+import type { NavigateFn, Selection } from '../App';
 import { BackButton, Card, SectionTitle, RiskGauge } from '../components/ui';
+import { getSession, listAlerts, type AlertItem, type SessionDetail } from '../lib/api';
 
 function CheckIcon({ color }: { color: string }) {
   return (
@@ -9,15 +11,41 @@ function CheckIcon({ color }: { color: string }) {
   );
 }
 
-const evidenceItems = [
+const FALLBACK_EVIDENCE = [
   'Identity analysis completed — match score 8% (threshold: 60%)',
-  'Synthetic speech detected — RawNet2 probability 87%',
+  'Synthetic speech detected — AASIST probability 87%',
   'Suspicious financial context detected — high-value transfer request',
   'Behavioral anomaly — unusual access time and request pattern',
   'Adversarial cross-check failed — pattern inconsistent with registered profile',
 ];
 
-export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }) {
+export default function AlertDetailScreen({ navigate, selection }: { navigate: NavigateFn; selection: Selection }) {
+  const [alert, setAlert] = useState<AlertItem | null>(null);
+  const [detail, setDetail] = useState<SessionDetail | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listAlerts()
+      .then(d => {
+        if (cancelled) return;
+        const found = d.alerts.find(a => a.id === selection.alertId || a.session === selection.sessionId)
+          ?? d.alerts[0] ?? null;
+        if (found) setAlert(found);
+      })
+      .catch(() => {});
+    if (selection.sessionId) {
+      getSession(selection.sessionId).then(d => { if (!cancelled) setDetail(d); }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [selection.alertId, selection.sessionId]);
+
+  const risk = detail?.risk_score ?? alert?.risk ?? 92;
+  const action = detail?.action_badge ?? detail?.action ?? alert?.action ?? 'BLOCKED';
+  const reasons = detail?.reasons ?? FALLBACK_EVIDENCE;
+  const sessionId = detail?.id ?? alert?.session ?? selection.sessionId ?? 'CALL-1042';
+  const title = alert?.title ?? detail?.detection_summary ?? 'Possible Voice Cloning Attack';
+  const severity = alert?.severity ?? (risk >= 80 ? 'Critical' : risk >= 60 ? 'High' : risk >= 30 ? 'Medium' : 'Low');
+
   return (
     <div>
       <BackButton onClick={() => navigate('alerts')} label="Back to Alerts" />
@@ -30,15 +58,15 @@ export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }
             border: '1px solid #f0383840', padding: '3px 10px', borderRadius: 4,
             marginBottom: 10, textTransform: 'uppercase',
           }}>
-            Security Alert — Critical
+            Security Alert — {severity}
           </div>
           <h1 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: '#d5dffa' }}>
-            Possible Voice Cloning Attack
+            {title}
           </h1>
           <div style={{ fontSize: 13, color: '#6280b8' }}>
-            Alert ID: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>ALT-0091</span>
-            &nbsp;&middot;&nbsp;Session: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>CALL-1042</span>
-            &nbsp;&middot;&nbsp;<span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>2026-09-20 10:42:17 UTC</span>
+            Alert ID: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>{alert?.id ?? 'ALT-0091'}</span>
+            &nbsp;&middot;&nbsp;Session: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>{sessionId}</span>
+            &nbsp;&middot;&nbsp;<span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8090b0' }}>{alert?.time ?? detail?.recorded_at ?? ''}</span>
           </div>
         </div>
         <button onClick={() => navigate('audit-trail')} style={{
@@ -50,11 +78,10 @@ export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
-        {/* Risk score */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Card style={{ padding: '20px 16px', textAlign: 'center' }}>
             <SectionTitle>Risk Score</SectionTitle>
-            <RiskGauge score={92} />
+            <RiskGauge score={risk} />
           </Card>
 
           <Card style={{ padding: '16px 18px' }}>
@@ -64,29 +91,27 @@ export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }
               background: '#2a080810', border: '1px solid #f0383850',
               textAlign: 'center',
             }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: '#f03838', letterSpacing: '0.06em' }}>BLOCKED</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: risk >= 60 ? '#f03838' : '#20d870', letterSpacing: '0.06em' }}>{action}</div>
             </div>
             <div style={{ fontSize: 12, color: '#3a4e78', marginBottom: 6 }}>Applied Policy</div>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#f03838', background: '#2a0808', border: '1px solid #f0383830', padding: '6px 10px', borderRadius: 6 }}>
-              CRITICAL_RISK_BLOCK
+              {detail?.fired_rules[0]?.rule_id ?? 'CRITICAL_RISK_BLOCK'}
             </div>
           </Card>
         </div>
 
-        {/* Right column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Detection evidence */}
           <Card style={{ padding: '16px 20px' }}>
             <SectionTitle>Detection Evidence</SectionTitle>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {evidenceItems.map((item, i) => (
+              {reasons.map((item, i) => (
                 <div key={i} style={{
                   display: 'flex', gap: 10, alignItems: 'flex-start',
                   padding: '8px 12px', borderRadius: 6, background: '#0a1428',
                   border: '1px solid #18234a',
                 }}>
                   <div style={{ marginTop: 1, flexShrink: 0 }}>
-                    <CheckIcon color="#f03838" />
+                    <CheckIcon color={risk >= 60 ? '#f03838' : '#20d870'} />
                   </div>
                   <span style={{ fontSize: 13, color: '#8090b0', lineHeight: 1.4 }}>{item}</span>
                 </div>
@@ -94,7 +119,6 @@ export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }
             </div>
           </Card>
 
-          {/* Blockchain audit */}
           <Card style={{ padding: '16px 20px' }}>
             <SectionTitle>Blockchain Audit Record</SectionTitle>
             <div style={{
@@ -112,9 +136,9 @@ export default function AlertDetailScreen({ navigate }: { navigate: NavigateFn }
             {[
               { label: 'Audit Status', value: 'RECORDED', color: '#20d870' },
               { label: 'Blockchain Network', value: 'Hyperledger Fabric' },
-              { label: 'Evidence Hash', value: '7f91b3c4...a83c', mono: true },
-              { label: 'Block Height', value: '#4,291,847', mono: true },
-              { label: 'Timestamp', value: '2026-09-20 10:42:18 UTC', mono: true },
+              { label: 'Evidence Hash', value: detail ? `${detail.decision_hash.slice(0, 8)}...${detail.decision_hash.slice(-4)}` : '7f91b3c4...a83c', mono: true },
+              { label: 'Rules Version', value: detail?.rules_version ?? 'rules-v0', mono: true },
+              { label: 'Timestamp', value: detail?.recorded_at ?? alert?.time ?? '—', mono: true },
               { label: 'Integrity', value: 'VERIFIED', color: '#20d870' },
             ].map(r => (
               <div key={r.label} style={{

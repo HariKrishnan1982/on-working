@@ -19,18 +19,41 @@ export type Screen =
 
 export type NavigateFn = (screen: Screen) => void;
 
+/** Selected record ids shared across screens (upload/select → detail flow). */
+export interface Selection {
+  sessionId: string | null;
+  alertId: string | null;
+  openSession: (id: string) => void;
+  openAlert: (id: string) => void;
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [alertId, setAlertId] = useState<string | null>(null);
   const navigate: NavigateFn = setScreen;
 
   if (screen === 'login') return <LoginScreen navigate={navigate} />;
 
+  const selection: Selection = {
+    sessionId,
+    alertId,
+    openSession: (id: string) => {
+      setSessionId(id);
+      setScreen('session-detail');
+    },
+    openAlert: (id: string) => {
+      setAlertId(id);
+      setScreen('alert-detail');
+    },
+  };
+
   const content: Partial<Record<Screen, React.ReactNode>> = {
-    dashboard: <DashboardScreen navigate={navigate} />,
-    'live-calls': <LiveCallsScreen navigate={navigate} />,
-    'session-detail': <SessionDetailScreen navigate={navigate} />,
-    alerts: <AlertsScreen navigate={navigate} />,
-    'alert-detail': <AlertDetailScreen navigate={navigate} />,
+    dashboard: <DashboardScreen navigate={navigate} selection={selection} />,
+    'live-calls': <LiveCallsScreen navigate={navigate} selection={selection} />,
+    'session-detail': <SessionDetailScreen navigate={navigate} selection={selection} />,
+    alerts: <AlertsScreen navigate={navigate} selection={selection} />,
+    'alert-detail': <AlertDetailScreen navigate={navigate} selection={selection} />,
     'audit-trail': <AuditTrailScreen navigate={navigate} />,
     'trusted-users': <TrustedUsersScreen navigate={navigate} />,
     'register-user': <RegisterUserScreen navigate={navigate} />,

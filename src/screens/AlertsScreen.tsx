@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import type { NavigateFn } from '../App';
+import { useEffect, useState } from 'react';
+import type { NavigateFn, Selection } from '../App';
 import { PageHeader, RiskBadge, ActionBadge, Card } from '../components/ui';
+import { listAlerts, type AlertItem } from '../lib/api';
 
-const allAlerts = [
+const FALLBACK_ALERTS: AlertItem[] = [
   { id: 'ALT-0091', session: 'CALL-1042', title: 'Possible Voice Cloning Attack', risk: 92, action: 'BLOCKED', severity: 'Critical', time: '10:42:17', resolved: false },
   { id: 'ALT-0090', session: 'CALL-1038', title: 'Suspicious Financial Request', risk: 76, action: 'MFA', severity: 'High', time: '10:39:11', resolved: false },
   { id: 'ALT-0089', session: 'CALL-1035', title: 'Behavioral Pattern Anomaly', risk: 63, action: 'MFA', severity: 'High', time: '10:34:55', resolved: false },
@@ -22,24 +23,47 @@ function severityColor(sev: string) {
   return '#6280b8';
 }
 
-export default function AlertsScreen({ navigate }: { navigate: NavigateFn }) {
+export default function AlertsScreen({ navigate: _navigate, selection }: { navigate: NavigateFn; selection: Selection }) {
   const [filter, setFilter] = useState<Filter>('All');
+  const [alerts, setAlerts] = useState<AlertItem[]>(FALLBACK_ALERTS);
+  const [live, setLive] = useState(false);
 
-  const filtered = allAlerts.filter(a => {
+  useEffect(() => {
+    let cancelled = false;
+    listAlerts()
+      .then(d => { if (!cancelled && d.alerts.length > 0) { setAlerts(d.alerts); setLive(true); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const filtered = alerts.filter(a => {
     if (filter === 'All') return true;
     if (filter === 'Resolved') return a.resolved;
     return a.severity === filter && !a.resolved;
   });
 
   const counts = {
-    Critical: allAlerts.filter(a => a.severity === 'Critical' && !a.resolved).length,
-    High: allAlerts.filter(a => a.severity === 'High' && !a.resolved).length,
-    Medium: allAlerts.filter(a => a.severity === 'Medium' && !a.resolved).length,
+    Critical: alerts.filter(a => a.severity === 'Critical' && !a.resolved).length,
+    High: alerts.filter(a => a.severity === 'High' && !a.resolved).length,
+    Medium: alerts.filter(a => a.severity === 'Medium' && !a.resolved).length,
   };
 
   return (
     <div>
-      <PageHeader title="Security Alerts" subtitle={`${allAlerts.filter(a => !a.resolved).length} active alerts requiring attention.`} />
+      <PageHeader
+        title="Security Alerts"
+        subtitle={`${alerts.filter(a => !a.resolved).length} active alerts requiring attention.`}
+      >
+        <span style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+          color: live ? '#20d870' : '#f5a020',
+          background: live ? '#082010' : '#2a1e06',
+          border: `1px solid ${live ? '#20d87050' : '#f5a02050'}`,
+          padding: '2px 8px', borderRadius: 4,
+        }}>
+          {live ? '● LIVE' : '○ DEMO DATA'}
+        </span>
+      </PageHeader>
 
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
@@ -89,7 +113,7 @@ export default function AlertsScreen({ navigate }: { navigate: NavigateFn }) {
         {filtered.map((alert, i) => (
           <div
             key={alert.id}
-            onClick={() => navigate('alert-detail')}
+            onClick={() => selection.openSession(alert.session)}
             style={{
               display: 'grid', gridTemplateColumns: '100px 1fr 80px 100px 130px 80px',
               padding: '12px 20px', cursor: 'pointer', transition: 'background 0.12s',

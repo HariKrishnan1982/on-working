@@ -20,6 +20,25 @@ logs/
 /.plugins/
 /.opencode-skills/
 
+# Python caches and environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+
+# Ephemeral runtime audio storage (preserve directory via .gitkeep)
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/preprocessed/*
+!storage/preprocessed/.gitkeep
+storage/transcripts/*
+!storage/transcripts/.gitkeep
+storage/profile_audio/*
+!storage/profile_audio/.gitkeep
+
 # Blockchain crypto material must never be committed (required by
 # tests/test_secret_scan.py via scripts/secret_scan.py).
 *.pem

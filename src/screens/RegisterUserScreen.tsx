@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { NavigateFn } from '../App';
 import { BackButton, Btn, Card, SectionTitle } from '../components/ui';
+import { enrollUser, type EnrollResult } from '../lib/api';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -71,8 +72,8 @@ function FormField({ label, placeholder, type = 'text', value, onChange }: {
   );
 }
 
-function VoiceSample({ n, recorded }: { n: number; recorded: boolean }) {
-  const [active, setActive] = useState(false);
+function VoiceSample({ n, fileName }: { n: number; fileName: string | null }) {
+  const recorded = fileName !== null;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
@@ -82,26 +83,26 @@ function VoiceSample({ n, recorded }: { n: number; recorded: boolean }) {
     }}>
       <div style={{
         width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-        background: recorded ? '#0a2818' : active ? '#1a3060' : '#0e1838',
-        border: `2px solid ${recorded ? '#20d870' : active ? '#4080f8' : '#28384a'}`,
+        background: recorded ? '#0a2818' : '#0e1838',
+        border: `2px solid ${recorded ? '#20d870' : '#28384a'}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', transition: 'all 0.15s',
-      }}
-        onClick={() => setActive(!active)}
-      >
+        transition: 'all 0.15s',
+      }}>
         {recorded ? (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#20d870" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         ) : (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#4080f8' : '#6280b8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6280b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
             <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
           </svg>
         )}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: recorded ? '#20d870' : '#d5dffa', marginBottom: 2 }}>Sample {n}</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: recorded ? '#20d870' : '#d5dffa', marginBottom: 2 }}>
+          Sample {n}{fileName ? ` — ${fileName}` : ''}
+        </div>
         {/* Waveform placeholder */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 1, height: 16 }}>
           {Array.from({ length: 28 }, (_, i) => (
@@ -115,7 +116,7 @@ function VoiceSample({ n, recorded }: { n: number; recorded: boolean }) {
         </div>
       </div>
       <span style={{ fontSize: 11, color: recorded ? '#20d870' : '#3a4e78', fontWeight: 600 }}>
-        {recorded ? 'Recorded' : 'Pending'}
+        {recorded ? 'Selected' : 'Pending'}
       </span>
     </div>
   );
@@ -124,22 +125,43 @@ function VoiceSample({ n, recorded }: { n: number; recorded: boolean }) {
 export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn }) {
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState({ name: '', email: '', role: '', dept: '', empId: '' });
-  const [progress, setProgress] = useState(0);
+  const [samples, setSamples] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<EnrollResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleNext = () => {
-    if (step === 3) {
-      let p = 0;
-      const id = setInterval(() => {
-        p += 5;
-        setProgress(p);
-        if (p >= 100) {
-          clearInterval(id);
-          setStep(4);
-          setProgress(0);
-        }
-      }, 80);
-    } else {
-      setStep((step + 1) as Step);
+  const handleFiles = () => {
+    const files = fileRef.current?.files;
+    if (files) setSamples(Array.from(files).slice(0, 3));
+  };
+
+  const handleEnroll = async () => {
+    if (!form.name.trim() || !form.empId.trim()) {
+      setError('Full name and employee ID are required.');
+      return;
+    }
+    if (samples.length === 0) {
+      setError('Attach at least one voice sample (WAV/MP3/OGG/FLAC).');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await enrollUser({
+        name: form.name.trim(),
+        empId: form.empId.trim(),
+        email: form.email.trim(),
+        role: form.role.trim(),
+        dept: form.dept.trim(),
+        samples,
+      });
+      setResult(res);
+      setStep(4);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Enrollment failed');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -161,8 +183,9 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
               <FormField label="Role / Title" placeholder="Finance Manager" value={form.role} onChange={v => setForm(f => ({ ...f, role: v }))} />
               <FormField label="Department" placeholder="Treasury" value={form.dept} onChange={v => setForm(f => ({ ...f, dept: v }))} />
             </div>
+            {error && <div style={{ fontSize: 12, color: '#f03838', marginBottom: 12 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Btn onClick={handleNext}>Continue to Voice Enrollment →</Btn>
+              <Btn onClick={() => { setError(null); setStep(2); }}>Continue to Voice Enrollment →</Btn>
             </div>
           </Card>
         )}
@@ -171,8 +194,9 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
           <Card style={{ padding: '24px 28px' }}>
             <SectionTitle>Voice Enrollment</SectionTitle>
             <p style={{ fontSize: 13, color: '#6280b8', marginBottom: 20 }}>
-              Record three voice samples for identity baseline. Ensure clear audio in a quiet environment.
-              Read the provided phrase for each sample.
+              Upload 1–3 voice samples for the ECAPA-TDNN biometric baseline.
+              Files are stored under <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>storage/profile_audio/</span> and
+              the embedding is Fernet-encrypted at rest (POST /api/v1/users).
             </p>
             <div style={{
               padding: '12px 16px', borderRadius: 8, marginBottom: 20,
@@ -183,14 +207,23 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
                 "The security gateway verifies all authorized voice interactions in real time."
               </div>
             </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="audio/*,.wav,.mp3,.ogg,.flac"
+              multiple
+              onChange={handleFiles}
+              style={{ fontSize: 12, color: '#6280b8', marginBottom: 12 }}
+            />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-              <VoiceSample n={1} recorded={true} />
-              <VoiceSample n={2} recorded={true} />
-              <VoiceSample n={3} recorded={false} />
+              {[1, 2, 3].map(n => (
+                <VoiceSample key={n} n={n} fileName={samples[n - 1]?.name ?? null} />
+              ))}
             </div>
+            {error && <div style={{ fontSize: 12, color: '#f03838', marginBottom: 12 }}>{error}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Btn variant="ghost" onClick={() => setStep(1)}>← Back</Btn>
-              <Btn onClick={handleNext}>Analyze Voice Features →</Btn>
+              <Btn onClick={() => { setError(null); setStep(3); }}>Review & Enroll →</Btn>
             </div>
           </Card>
         )}
@@ -199,39 +232,23 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
           <Card style={{ padding: '24px 28px' }}>
             <SectionTitle>Feature Extraction</SectionTitle>
             <p style={{ fontSize: 13, color: '#6280b8', marginBottom: 20 }}>
-              AI models are extracting biometric voice features and building a secure identity profile.
+              ECAPA-TDNN extracts a 192-dim voiceprint, encrypts it with Fernet, and keys it by
+              HMAC-SHA256 pseudonym. Only name/role/dept metadata is kept in the operator registry.
             </p>
             {[
-              { label: 'Wav2Vec2 Feature Extraction', value: 100 },
-              { label: 'RawNet2 Speaker Embedding', value: 100 },
-              { label: 'Prosody & Cadence Analysis', value: 100 },
-              { label: 'Voice Quality Assessment', value: 98 },
-              { label: 'Profile Synthesis', value: 100 },
+              { label: 'Enrolling', value: `${form.name || '—'} (${form.empId || '—'})` },
+              { label: 'Voice samples', value: samples.length > 0 ? samples.map(s => s.name).join(', ') : 'none selected' },
+              { label: 'Model', value: 'ecapa-tdnn-voxceleb-v0' },
             ].map(item => (
-              <div key={item.label} style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 12, color: '#8090b0' }}>{item.label}</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#20d870' }}>{item.value}%</span>
-                </div>
-                <div style={{ height: 5, background: '#18234a', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${item.value}%`, background: '#20d870', borderRadius: 3 }} />
-                </div>
+              <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 12, color: '#3a4e78' }}>{item.label}</span>
+                <span style={{ fontSize: 12, color: '#d5dffa', fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
               </div>
             ))}
-            <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 8, background: '#082010', border: '1px solid #20d87040', marginBottom: 24 }}>
-              <span style={{ fontSize: 12, color: '#20d870', fontWeight: 600 }}>✓ Voice Quality: EXCELLENT (98%)</span>
-            </div>
-            {progress > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: '#6280b8', marginBottom: 6 }}>Creating secure profile… {progress}%</div>
-                <div style={{ height: 6, background: '#18234a', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${progress}%`, background: '#4080f8', borderRadius: 3, transition: 'width 0.1s' }} />
-                </div>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            {error && <div style={{ fontSize: 12, color: '#f03838', margin: '12px 0' }}>{error}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
               <Btn variant="ghost" onClick={() => setStep(2)}>← Back</Btn>
-              <Btn onClick={handleNext} disabled={progress > 0}>Create Secure Profile →</Btn>
+              <Btn onClick={handleEnroll} disabled={busy}>{busy ? 'Enrolling…' : 'Create Secure Profile →'}</Btn>
             </div>
           </Card>
         )}
@@ -248,14 +265,19 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
               </svg>
             </div>
             <h2 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700, color: '#20d870' }}>Voice Profile Created</h2>
-            <p style={{ color: '#6280b8', fontSize: 13, marginBottom: 24 }}>The user has been successfully enrolled in the VoiceShield security gateway.</p>
+            <p style={{ color: '#6280b8', fontSize: 13, marginBottom: 24 }}>
+              {result
+                ? `Enrolled on the live backend — voiceprint encrypted, subject_ref …${result.subject_ref_last8}.`
+                : 'The user has been successfully enrolled in the VoiceShield security gateway.'}
+            </p>
 
             <div style={{ background: '#080c24', border: '1px solid #18234a', borderRadius: 8, padding: '16px', marginBottom: 24, textAlign: 'left', maxWidth: 400, margin: '0 auto 24px' }}>
               {[
-                { label: 'Profile ID', value: 'VP-048', mono: true },
-                { label: 'User', value: form.name || 'New User' },
-                { label: 'Employee ID', value: form.empId || 'EMP-0048', mono: true },
-                { label: 'Enrolled', value: '2026-09-20 10:44:33 UTC', mono: true },
+                { label: 'Profile ID', value: result?.profile ?? 'VP-048', mono: true },
+                { label: 'User', value: result?.name ?? form.name ?? 'New User' },
+                { label: 'Employee ID', value: result?.emp_id ?? form.empId ?? 'EMP-0048', mono: true },
+                { label: 'Enrolled', value: result?.enrolled ?? new Date().toISOString().slice(0, 10), mono: true },
+                { label: 'Quality', value: result ? `${result.quality}%` : '—', mono: true },
                 { label: 'Status', value: 'ACTIVE', color: '#20d870' },
               ].map(r => (
                 <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #0e1838' }}>
@@ -267,7 +289,7 @@ export default function RegisterUserScreen({ navigate }: { navigate: NavigateFn 
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <Btn variant="ghost" onClick={() => navigate('trusted-users')}>Back to Users</Btn>
-              <Btn onClick={() => { setStep(1); setForm({ name: '', email: '', role: '', dept: '', empId: '' }); }}>Enroll Another User</Btn>
+              <Btn onClick={() => { setStep(1); setResult(null); setSamples([]); setForm({ name: '', email: '', role: '', dept: '', empId: '' }); }}>Enroll Another User</Btn>
             </div>
           </Card>
         )}
