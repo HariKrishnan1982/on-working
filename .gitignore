@@ -1,50 +1,28 @@
-# Environment & Secrets
-.env
-*.env
-.env.*
-!.env.example
-
-# Crypto material & Blockchain credentials
-*.pem
-*.key
-*.crt
-*.csr
-wallet/
-keystore/
-msp/
-crypto-config/
-secrets/
-*.id
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-env/
-venv/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Node.js & Chaincode
 node_modules/
 dist/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.npm/
+build/
+.cache/
+.env*
+.vite/
+vite.config.*.timestamp-*
+*.tsbuildinfo
+*-debug.log*
+logs/
+*.log
+.claude-replay.*
+.tmp-*
+/.figma/design-context/
 
-# IDE & OS
-.idea/
-.vscode/
-*.swp
-*~
-Thumbs.db
-Desktop.ini
-.DS_Store
+# Platform-managed agentplat state, not project source. In the
+# client-initiated single-repo workspace layout (make's `Path: "."` spec) the
+# repo root IS the workspace root, so these land inside this repo rather than
+# beside it.
+/.plugins/
+/.opencode-skills/
 
-# Temporary databases & storage
-/data/
-/encrypted_storage/
-pg_test_*
+# Blockchain crypto material must never be committed (required by
+# tests/test_secret_scan.py via scripts/secret_scan.py).
+*.pem
+*.key
+wallet/
+keystore/

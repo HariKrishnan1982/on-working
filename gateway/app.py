@@ -11,7 +11,10 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -28,10 +31,14 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
+import soundfile as sf
+
 from configs.settings import settings
+from gateway.ops_api import record_session, router as ops_router
 from gateway.session import create_session
 from schemas.models import (
     BranchStatus,
@@ -47,7 +54,30 @@ app = FastAPI(
     version="0.2.0",
 )
 
+# Dashboard (React) runs on the Vite dev server; allow cross-origin reads.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8443",
+        "http://127.0.0.1:8443",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Operations / dashboard API consumed by frontend/
+app.include_router(ops_router)
+
 pipeline_service = PipelineService()
+
+logger = logging.getLogger(__name__)
+
+# Disk location for persisted multipart uploads so the pipeline can read real audio.
+UPLOAD_ROOT = Path("storage") / "uploads"
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 # ── Security & Authentication ────────────────────────────────────────────────
 
@@ -98,6 +128,59 @@ class JobCreationResponse(BaseModel):
 # ── Helper for async execution ────────────────────────────────────────────────
 
 
+def _audio_metadata(audio_path: str) -> tuple[Optional[float], Optional[int], Optional[int]]:
+    """Best-effort extraction of duration/rate/channels for the ops session store."""
+    try:
+        info = sf.info(audio_path)
+        return info.duration, info.samplerate, info.channels
+    except Exception:
+        return None, None, None
+
+
+def _record_ops_session(session: "CallSession", decision: RiskDecision) -> None:
+    """Mirror a pipeline decision into the dashboard ops store (never raises)."""
+    try:
+        from gateway.ops_api import capture_vad_stats
+        from gateway.ops_api import record_session as ops_record_session
+
+        duration_s, sample_rate, channels = _audio_metadata(session.audio_path_encrypted)
+        ops_record_session(
+            session.session_id,
+            session.caller_id,
+            session.claimed_identity,
+            decision,
+            duration_s=duration_s,
+            sample_rate=sample_rate,
+            channels=channels,
+            vad=capture_vad_stats(session.audio_path_encrypted, session.session_id),
+        )
+    except Exception as e:
+        logger.warning("Could not record ops session '%s': %s", session.session_id, e)
+
+
+def _append_audit_best_effort(decision: RiskDecision) -> None:
+    """Append to the PostgreSQL/Fabric audit chain without failing the request.
+
+    Runs in a daemon thread with its own event loop. Never calls
+    ``asyncio.run`` on the caller's thread: under ``TestClient``/uvicorn the
+    caller may already live inside an anyio portal loop, where a nested
+    ``asyncio.run`` deadlocks the process.
+    """
+    try:
+        from audit.fabric_sink import FabricSink
+
+        def _runner() -> None:
+            try:
+                asyncio.run(FabricSink().append(decision))
+            except Exception as e:
+                logger.debug("Audit append skipped (ledger offline): %s", e)
+
+        thread = threading.Thread(target=_runner, daemon=True, name="vfd-audit-append")
+        thread.start()
+    except Exception as e:
+        logger.debug("Audit append scheduling failed: %s", e)
+
+
 def _execute_job_task(job_id: str, caller_id: str, audio_path: str, claimed_identity: Optional[str], language_hint: str):
     try:
         jobs_db[job_id].status = JobStatus.PROCESSING
@@ -109,9 +192,12 @@ def _execute_job_task(job_id: str, caller_id: str, audio_path: str, claimed_iden
             language_hint=lang,
         )
         decision = pipeline_service.process_call_session(session)
+        _record_ops_session(session, decision)
+        _append_audit_best_effort(decision)
         jobs_db[job_id].decision = decision
         jobs_db[job_id].status = JobStatus.COMPLETED
     except Exception as e:
+        logger.exception("Job '%s' failed: %s", job_id, e)
         jobs_db[job_id].status = JobStatus.FAILED
         jobs_db[job_id].error = str(e)
 
@@ -140,7 +226,15 @@ def analyze_call_sync(
         claimed_identity=request.claimed_identity,
         language_hint=lang,
     )
-    return pipeline_service.process_call_session(session)
+    return _run_analysis(session)
+
+
+def _run_analysis(session: "CallSession"):
+    """Shared decision path: executes pipeline, records the session for ops + audit."""
+    decision = pipeline_service.process_call_session(session)
+    _record_ops_session(session, decision)
+    _append_audit_best_effort(decision)
+    return decision
 
 
 @app.post("/jobs", response_model=JobCreationResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -175,7 +269,10 @@ async def create_analysis_job(
                 detail=f"Audio file size ({len(contents)} bytes) exceeds limit of {settings.max_upload_bytes} bytes",
             )
 
-        resolved_audio_path = f"/encrypted_storage/uploads/{uuid.uuid4()}_{audio_file.filename}"
+        safe_name = Path(audio_file.filename or "upload.wav").name or "upload.wav"
+        target_path = UPLOAD_ROOT / f"{uuid.uuid4()}_{safe_name}"
+        target_path.write_bytes(contents)
+        resolved_audio_path = str(target_path)
     elif audio_path is not None:
         resolved_audio_path = audio_path
     else:

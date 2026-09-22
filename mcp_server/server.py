@@ -15,9 +15,9 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from branches.antispoof.stub import analyze_spoof
-from branches.asr_intent.stub import analyze_intent
-from branches.speaker.stub import verify_speaker
+from branches.antispoof import analyze_spoof
+from branches.asr_intent import analyze_intent
+from branches.speaker import verify_speaker
 from gateway.session import create_session
 from schemas.models import Language
 from services.pipeline_service import PipelineService

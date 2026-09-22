@@ -68,7 +68,7 @@ class FabricSink(AuditSink):
             self._initialized = True
 
     async def _run_init_ddl(self) -> None:
-        async with await psycopg.AsyncConnection.connect(self.dsn, autocommit=True) as conn:
+        async with await psycopg.AsyncConnection.connect(self.dsn, autocommit=True, connect_timeout=3) as conn:
             async with conn.cursor() as cur:
                 # 1. Audit Log Table with anchor_status
                 await cur.execute(
@@ -158,7 +158,7 @@ class FabricSink(AuditSink):
         canonical_payload = build_canonical_decision_payload(decision)
 
         # 1. Transactional Write to Postgres
-        async with await psycopg.AsyncConnection.connect(self.dsn, row_factory=dict_row) as conn:
+        async with await psycopg.AsyncConnection.connect(self.dsn, row_factory=dict_row, connect_timeout=3) as conn:
             async with conn.transaction():
                 async with conn.cursor() as cur:
                     await cur.execute("SELECT pg_advisory_xact_lock(%s);", (ADVISORY_LOCK_ID,))

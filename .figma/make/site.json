@@ -1,0 +1,10 @@
+{
+  "description": "Streamline your workflow with an intuitive platform that helps users check tasks and manage projects efficiently, enhancing productivity and collaboration.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

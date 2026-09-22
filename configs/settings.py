@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         description="Verify loaded models and rules against on-chain ModelRegistry. Defaults to True.",
     )
     fabric_bridge_url: str = Field(
-        "http://127.0.0.1:8080",
+        "http://127.0.0.1:8081",
         description="Base URL for Node/TypeScript fabric-bridge service bound to 127.0.0.1",
     )
     fabric_bridge_api_key: Optional[str] = Field(
