@@ -26,3 +26,8 @@ logs/
 *.key
 wallet/
 keystore/
+
+# Asterisk/PBX secrets are generated on the Asterisk host and must never be
+# committed (required by tests/test_asterisk_ari.py).
+asterisk/*-secrets.conf
+asterisk/secrets/

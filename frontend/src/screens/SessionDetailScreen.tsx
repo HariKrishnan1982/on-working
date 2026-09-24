@@ -124,25 +124,39 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
   const intent = detail?.evidence.intent;
   const vad = detail?.vad ?? null;
 
-  const risk = detail?.risk_score ?? 92;
-  const identity = detail && speaker ? Math.round(speaker.similarity_score * 100) : 8;
-  const deepfake = detail && spoof ? Math.round(spoof.spoof_score * 100) : 87;
-  const context = detail && intent ? Math.round(intent.scam_score * 100) : 91;
-  const action = detail?.action_badge ?? detail?.action ?? 'BLOCKED';
-  const caller = detail?.caller_id ?? 'EMP-1042';
-  const rulesVersion = detail?.rules_version ?? 'rules-v0 (offline demo)';
-  const decisionHash = detail?.decision_hash ?? 'offline-demo-hash';
-  const reasons = detail?.reasons ?? ['Possible AI-generated voice combined with suspicious high-risk interaction context.'];
+  // No fabricated fallbacks: without a backend decision there is nothing to
+  // render — the honest unavailable state below replaces the old demo values.
+  if (!loading && !detail) {
+    return (
+      <div>
+        <BackButton onClick={() => navigate('live-calls')} label="Back to Live Calls" />
+        <div style={{ padding: '32px', textAlign: 'center', color: '#f03838', fontSize: 13 }}>
+          Analysis unavailable — session {sessionId ? `'${sessionId}' was not found` : 'not selected'} or the
+          real-time gateway is unreachable. No demo data is shown.
+        </div>
+      </div>
+    );
+  }
+
+  const risk = detail?.risk_score ?? 0;
+  const identity = detail && speaker ? Math.round(speaker.similarity_score * 100) : 0;
+  const deepfake = detail && spoof ? Math.round(spoof.spoof_score * 100) : 0;
+  const context = detail && intent ? Math.round(intent.scam_score * 100) : 0;
+  const action = detail?.action_badge ?? detail?.action ?? '—';
+  const caller = detail?.caller_id ?? '—';
+  const rulesVersion = detail?.rules_version ?? '—';
+  const decisionHash = detail?.decision_hash ?? '—';
+  const reasons = detail?.reasons ?? [];
   const fired = detail?.fired_rules ?? [];
 
   const speakerVerdict = !detail
-    ? 'SUSPICIOUS'
+    ? 'DEGRADED'
     : speaker?.status === 'not_enrolled' || speaker?.status !== 'ok'
       ? 'DEGRADED'
       : speaker.is_match ? 'VERIFIED' : 'SUSPICIOUS';
-  const spoofVerdict = !detail ? 'SUSPICIOUS' : spoof?.status !== 'ok' ? 'DEGRADED' : spoof.is_spoofed ? 'SUSPICIOUS' : 'VERIFIED';
+  const spoofVerdict = !detail ? 'DEGRADED' : spoof?.status !== 'ok' ? 'DEGRADED' : spoof.is_spoofed ? 'SUSPICIOUS' : 'VERIFIED';
   const intentVerdict = !detail
-    ? 'SUSPICIOUS'
+    ? 'DEGRADED'
     : intent?.status !== 'ok'
       ? 'DEGRADED'
       : context >= 80 ? 'FLAGGED' : context >= 50 ? 'SUSPICIOUS' : context >= 30 ? 'UNUSUAL' : 'VERIFIED';
@@ -155,7 +169,7 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#d5dffa' }}>
-              CALL SESSION #{sessionId ?? 'CALL-1042'}
+              CALL SESSION #{sessionId ?? '—'}
             </span>
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
@@ -163,11 +177,11 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
               border: `1px solid ${live ? '#20d87050' : '#f5a02050'}`,
               padding: '3px 8px', borderRadius: 4,
             }}>
-              {loading ? '○ LOADING…' : live ? '● LIVE ANALYSIS' : '○ OFFLINE DEMO'}
+              {loading ? '○ LOADING…' : live ? '● LIVE ANALYSIS' : '○ ANALYSIS UNAVAILABLE'}
             </span>
           </div>
           <div style={{ fontSize: 13, color: '#6280b8' }}>
-            {detail?.detection_summary ?? 'Real-time multi-agent voice security analysis in progress'}
+            {detail?.detection_summary ?? 'Loading session analysis…'}
           </div>
           {detail && (
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#3a4e78', marginTop: 6 }}>
@@ -190,9 +204,9 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
             <SectionTitle>Caller Information</SectionTitle>
             {[
               { label: 'User ID', value: caller, mono: true },
-              { label: 'Claimed Identity', value: detail?.claimed_identity ?? 'EMP-1042', mono: true },
-              { label: 'Duration', value: detail?.duration_s != null ? `${Math.floor(detail.duration_s / 60)}:${String(Math.floor(detail.duration_s % 60)).padStart(2, '0')}` : '02:43', mono: true },
-              { label: 'Sample Rate', value: detail?.sample_rate ? `${detail.sample_rate} Hz` : '16000 Hz', mono: true },
+              { label: 'Claimed Identity', value: detail?.claimed_identity ?? '—', mono: true },
+              { label: 'Duration', value: detail?.duration_s != null ? `${Math.floor(detail.duration_s / 60)}:${String(Math.floor(detail.duration_s % 60)).padStart(2, '0')}` : '—', mono: true },
+              { label: 'Sample Rate', value: detail?.sample_rate ? `${detail.sample_rate} Hz` : '—', mono: true },
               { label: 'Channels', value: detail?.channels != null ? String(detail.channels) : '—', mono: true },
               { label: 'Recorded', value: detail ? new Date(detail.recorded_at).toLocaleString() : '—', mono: true },
             ].map(r => (
@@ -215,7 +229,7 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
             <SectionTitle>Signal & VAD (Phase 1)</SectionTitle>
             <EvidenceRow
               label="Validity"
-              value={!detail ? 'UNKNOWN (offline demo)' : !vad ? '—' : vad.is_valid ? 'SPEECH DETECTED' : 'INSUFFICIENT / SILENT'}
+              value={!detail ? 'LOADING…' : !vad ? '—' : vad.is_valid ? 'SPEECH DETECTED' : 'INSUFFICIENT / SILENT'}
               color={!detail || !vad ? undefined : vad.is_valid ? '#20d870' : '#f07228'}
             />
             <EvidenceRow label="Voiced segments" value={vad ? String(vad.segment_count) : '—'} />
@@ -243,7 +257,7 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
                   { label: 'Match Score', value: `${identity}%`, color: identity < 65 ? '#f03838' : '#20d870' },
                   { label: 'Raw cosine', value: speaker?.raw_cosine != null ? speaker.raw_cosine.toFixed(4) : '—' },
                   { label: 'Threshold', value: speaker ? speaker.threshold_used.toFixed(2) : '0.65' },
-                  { label: 'Verdict', value: speaker ? (speaker.is_match ? 'MATCH' : speaker.status === 'not_enrolled' ? 'NOT ENROLLED' : 'MISMATCH') : 'MISMATCH', color: '#f03838' },
+                  { label: 'Verdict', value: speaker ? (speaker.is_match ? 'MATCH' : speaker.status === 'not_enrolled' ? 'NOT ENROLLED' : 'MISMATCH') : '—', color: '#f03838' },
                 ]}
                 status={speakerVerdict}
               />
@@ -252,7 +266,7 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
                 metrics={[
                   { label: 'Synthetic Prob.', value: `${deepfake}%`, color: deepfake >= 50 ? '#f03838' : '#20d870' },
                   { label: 'Confidence', value: spoof ? `${Math.round(spoof.confidence * 100)}%` : '—' },
-                  { label: 'Verdict', value: spoof ? (spoof.is_spoofed ? 'SPOOFED' : 'BONA-FIDE') : 'SPOOFED', color: deepfake >= 50 ? '#f03838' : '#20d870' },
+                  { label: 'Verdict', value: spoof ? (spoof.is_spoofed ? 'SPOOFED' : 'BONA-FIDE') : '—', color: deepfake >= 50 ? '#f03838' : '#20d870' },
                 ]}
                 status={spoofVerdict}
               />
@@ -260,7 +274,7 @@ export default function SessionDetailScreen({ navigate, selection }: { navigate:
                 title="Context / Fraud Agent (Whisper + rules)"
                 metrics={[
                   { label: 'Scam Score', value: `${context}%`, color: context >= 50 ? '#f07228' : '#20d870' },
-                  { label: 'Category', value: intent ? intent.intent_category : 'SCAM_CONFIRMED' },
+                  { label: 'Category', value: intent ? intent.intent_category : '—' },
                   { label: 'Language', value: intent ? intent.language_detected : 'EN' },
                 ]}
                 status={intentVerdict}

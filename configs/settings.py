@@ -4,7 +4,7 @@ All configuration is loaded from environment variables or .env file with VFD_ pr
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
@@ -60,6 +60,75 @@ class Settings(BaseSettings):
     port: int = Field(8000)
     log_level: str = Field("INFO")
     stub_delay_ms: float = Field(0.0)
+
+    # Telephony ingress (provider-neutral; all optional, placeholders only)
+    telephony_provider: str = Field(
+        "",
+        description="Telephony provider name (e.g. 'twilio'). Empty means no provider configured.",
+    )
+    telephony_api_key: Optional[str] = Field(
+        None, description="Provider API key SID/identifier. Never committed; env only."
+    )
+    telephony_api_secret: Optional[str] = Field(
+        None, description="Provider API secret. Never committed; env only."
+    )
+    telephony_webhook_secret: Optional[str] = Field(
+        None,
+        description="Provider webhook signing secret (Twilio auth token). Required to accept provider webhooks.",
+    )
+    telephony_sip_domain: str = Field(
+        "", description="SIP domain/trunk identifier for future SIP-trunk wiring (informational)."
+    )
+    telephony_public_base_url: str = Field(
+        "",
+        description="Public base URL of this gateway (e.g. https://voice.example.com). Used to reconstruct the signed webhook URL. Empty falls back to the incoming request URL.",
+    )
+    telephony_local_rtp_enabled: bool = Field(
+        True,
+        description="Enable the local RTP/UDP ingress for development and real SIP-phone media.",
+    )
+    telephony_local_rtp_host: str = Field(
+        "127.0.0.1", description="Interface the local RTP listener binds to."
+    )
+    telephony_local_rtp_port: int = Field(
+        10000, description="UDP port for inbound telephony RTP packets."
+    )
+    telephony_auto_accept_local: bool = Field(
+        True,
+        description="Auto-accept inbound local-RTP calls on first packet (development). Disable to require explicit accept.",
+    )
+    telephony_max_body_bytes: int = Field(
+        65536, description="Maximum provider webhook body size in bytes."
+    )
+    telephony_rate_limit_per_min: int = Field(
+        60,
+        description="Per-source-IP rate limit (requests/minute) for telephony call-control and webhook endpoints.",
+    )
+    telephony_event_log_cap: int = Field(
+        200, description="Maximum lifecycle events retained per live session for the telephony audit trail."
+    )
+    telephony_action_mode: Literal["detect-only"] = Field(
+        "detect-only",
+        description="Telephony enforcement posture. Only 'detect-only' is supported: risk decisions are recorded and exposed, the call is never terminated by VoiceShield. (Call termination requires a future ARI-control phase.)",
+    )
+
+    # Asterisk / ARI (WSL2 or Docker host; placeholders only, never commit secrets)
+    asterisk_ari_url: str = Field(
+        "http://127.0.0.1:8088/ari",
+        description="Base URL of the Asterisk ARI interface (e.g. http://<wsl2-ip>:8088/ari).",
+    )
+    asterisk_ari_user: str = Field(
+        "voiceshield", description="ARI username (must match asterisk/ari-secrets.conf on the Asterisk host)."
+    )
+    asterisk_ari_password: Optional[str] = Field(
+        None, description="ARI password. Never committed; env only. Unset means ARI is not configured."
+    )
+    asterisk_ari_app: str = Field(
+        "voiceshield", description="Stasis application name (must match extensions.conf Stasis() argument)."
+    )
+    asterisk_ari_timeout_s: float = Field(
+        5.0, description="Timeout in seconds for Asterisk ARI REST calls."
+    )
 
     model_config = {
         "env_prefix": "VFD_",

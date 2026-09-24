@@ -45,18 +45,24 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 export default function DashboardScreen({ navigate, selection }: { navigate: NavigateFn; selection: Selection }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [gatewayOnline, setGatewayOnline] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    getDashboardSummary().then(d => { if (!cancelled) setSummary(d); }).catch(() => {});
+    setLoading(true);
+    getDashboardSummary()
+      .then(d => { if (!cancelled) setSummary(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
     checkHealth().then(() => { if (!cancelled) setGatewayOnline(true); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
   const live = summary !== null;
-  const events = live && summary.recent_events.length > 0 ? summary.recent_events : FALLBACK_EVENTS;
+  const hasEvents = live && summary.recent_events.length > 0;
+  const events = hasEvents ? summary.recent_events : FALLBACK_EVENTS;
   // No timeseries endpoint exists: plot the real recent-event risk points when live.
-  const chart = live && summary.recent_events.length > 0
+  const chart = hasEvents
     ? summary.recent_events.slice().reverse().map(e => ({ time: e.time, risk: e.risk, calls: 1 }))
     : FALLBACK_CHART;
 
@@ -147,6 +153,16 @@ export default function DashboardScreen({ navigate, selection }: { navigate: Nav
             fontSize: 12, color: '#4080f8',
           }}>View All Alerts →</button>
         </div>
+        {!live && !loading && (
+          <div style={{ padding: '8px 20px', fontSize: 11, color: '#f5a020', background: '#2a1e06', borderBottom: '1px solid #0e1838' }}>
+            Demo data — backend unreachable. Start the gateway to see live events.
+          </div>
+        )}
+        {live && !hasEvents && (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#3a4e78', fontSize: 13 }}>
+            No sessions analyzed yet — upload a call recording from Live Calls to create the first event.
+          </div>
+        )}
         {/* Header */}
         <div style={{
           display: 'grid', gridTemplateColumns: '80px 1fr 80px 1fr 120px',
@@ -156,10 +172,19 @@ export default function DashboardScreen({ navigate, selection }: { navigate: Nav
             <span key={h} style={{ fontSize: 10, fontWeight: 600, color: '#3a4e78', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{h}</span>
           ))}
         </div>
-        {events.map((ev, i) => (
+        {loading && (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#6280b8', fontSize: 13 }}>
+            Loading live summary…
+          </div>
+        )}
+        {!loading && !(live && !hasEvents) && events.map((ev, i) => (
           <div
             key={`${ev.session_id}-${i}`}
-            onClick={() => selection.openSession(ev.session_id)}
+            onClick={() => {
+              // Demo fallback rows point at non-existent backend sessions; only
+              // navigate when the row came from the live API.
+              if (hasEvents) selection.openSession(ev.session_id);
+            }}
             style={{
               display: 'grid', gridTemplateColumns: '80px 1fr 80px 1fr 120px',
               padding: '11px 20px',

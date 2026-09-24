@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { NavigateFn, Selection } from '../App';
 import { BackButton, Card, SectionTitle, RiskGauge } from '../components/ui';
-import { getSession, listAlerts, type AlertItem, type SessionDetail } from '../lib/api';
+import { getDecisionAuditProof, getSession, listAlerts, type AlertItem, type DecisionAuditProof, type SessionDetail } from '../lib/api';
 
 function CheckIcon({ color }: { color: string }) {
   return (
@@ -22,6 +22,7 @@ const FALLBACK_EVIDENCE = [
 export default function AlertDetailScreen({ navigate, selection }: { navigate: NavigateFn; selection: Selection }) {
   const [alert, setAlert] = useState<AlertItem | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [proof, setProof] = useState<DecisionAuditProof | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +36,8 @@ export default function AlertDetailScreen({ navigate, selection }: { navigate: N
       .catch(() => {});
     if (selection.sessionId) {
       getSession(selection.sessionId).then(d => { if (!cancelled) setDetail(d); }).catch(() => {});
+      // Read-only chain proof from the backend — never computed locally.
+      getDecisionAuditProof(selection.sessionId).then(p => { if (!cancelled) setProof(p); }).catch(() => {});
     }
     return () => { cancelled = true; };
   }, [selection.alertId, selection.sessionId]);
@@ -123,23 +126,41 @@ export default function AlertDetailScreen({ navigate, selection }: { navigate: N
             <SectionTitle>Blockchain Audit Record</SectionTitle>
             <div style={{
               padding: '14px 16px', borderRadius: 8,
-              background: '#080e28', border: '1px solid #4080f830',
+              background: !proof ? '#0a1428' : proof.chain_verified && proof.anchor_status === 'anchored' ? '#082010' : '#2a1e06',
+              border: `1px solid ${!proof ? '#18234a' : proof.chain_verified && proof.anchor_status === 'anchored' ? '#20d87040' : '#f5a02040'}`,
               marginBottom: 14,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#20d870', boxShadow: '0 0 5px #20d87070' }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#20d870', letterSpacing: '0.06em' }}>INTEGRITY VERIFIED</span>
+                <div style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: !proof ? '#3a4e78' : proof.chain_verified && proof.anchor_status === 'anchored' ? '#20d870' : '#f5a020',
+                  boxShadow: '0 0 5px #20d87070',
+                }} />
+                <span style={{
+                  fontSize: 12, fontWeight: 600, letterSpacing: '0.06em',
+                  color: !proof ? '#6280b8' : proof.chain_verified && proof.anchor_status === 'anchored' ? '#20d870' : '#f5a020',
+                }}>
+                  {!proof ? 'AUDIT PROOF UNAVAILABLE (OFFLINE DEMO)' : proof.anchor_status === 'anchored' && proof.chain_verified ? 'INTEGRITY VERIFIED' : `CHAIN ${proof.chain_verified ? 'VERIFIED' : 'UNVERIFIED'} · ${proof.anchor_status?.toUpperCase() ?? 'UNKNOWN'}`}
+                </span>
               </div>
-              <div style={{ fontSize: 11, color: '#3a4e78' }}>Tamper-evident record confirmed on distributed ledger</div>
+              <div style={{ fontSize: 11, color: '#3a4e78' }}>
+                {!proof
+                  ? 'Backend unreachable — showing demo values, not a ledger claim.'
+                  : proof.anchor_status === 'anchored'
+                    ? 'Tamper-evident record confirmed on distributed ledger'
+                    : 'Anchor pending — recorded locally, not yet written to Fabric. Server value is authoritative.'}
+              </div>
             </div>
 
             {[
-              { label: 'Audit Status', value: 'RECORDED', color: '#20d870' },
+              { label: 'Audit Status', value: proof ? (proof.found ? 'RECORDED' : 'PENDING') : 'DEMO (offline)', color: proof ? (proof.found ? '#20d870' : '#f5a020') : '#f5a020' },
               { label: 'Blockchain Network', value: 'Hyperledger Fabric' },
               { label: 'Evidence Hash', value: detail ? `${detail.decision_hash.slice(0, 8)}...${detail.decision_hash.slice(-4)}` : '7f91b3c4...a83c', mono: true },
+              { label: 'Chain Position', value: proof?.chain_position != null ? `#${proof.chain_position}` : '— (anchor pending / local fallback)', mono: true },
+              { label: 'Anchor Status', value: proof?.anchor_status ?? 'unknown (offline demo)', mono: true },
               { label: 'Rules Version', value: detail?.rules_version ?? 'rules-v0', mono: true },
               { label: 'Timestamp', value: detail?.recorded_at ?? alert?.time ?? '—', mono: true },
-              { label: 'Integrity', value: 'VERIFIED', color: '#20d870' },
+              { label: 'Integrity', value: proof ? (proof.chain_verified ? 'VERIFIED (server)' : 'UNVERIFIED') : 'UNKNOWN (offline)', color: proof ? (proof.chain_verified ? '#20d870' : '#f03838') : '#f5a020' },
             ].map(r => (
               <div key={r.label} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',

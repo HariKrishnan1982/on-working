@@ -27,12 +27,24 @@ export default function AlertsScreen({ navigate: _navigate, selection }: { navig
   const [filter, setFilter] = useState<Filter>('All');
   const [alerts, setAlerts] = useState<AlertItem[]>(FALLBACK_ALERTS);
   const [live, setLive] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     listAlerts()
-      .then(d => { if (!cancelled && d.alerts.length > 0) { setAlerts(d.alerts); setLive(true); } })
-      .catch(() => {});
+      .then(d => {
+        if (cancelled) return;
+        // A reachable backend returning zero alerts is an honest empty state,
+        // not a reason to keep showing demo rows.
+        setAlerts(d.alerts);
+        setLive(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAlerts(FALLBACK_ALERTS);
+        setLive(false);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -63,6 +75,7 @@ export default function AlertsScreen({ navigate: _navigate, selection }: { navig
         }}>
           {live ? '● LIVE' : '○ DEMO DATA'}
         </span>
+        {loading && <span style={{ fontSize: 11, color: '#6280b8' }}>Loading…</span>}
       </PageHeader>
 
       {/* Filter bar */}
@@ -102,6 +115,16 @@ export default function AlertsScreen({ navigate: _navigate, selection }: { navig
 
       {/* Alert list */}
       <Card>
+        {!live && !loading && (
+          <div style={{ padding: '8px 20px', fontSize: 11, color: '#f5a020', background: '#2a1e06', borderBottom: '1px solid #0e1838' }}>
+            Demo data — backend unreachable. Live HIGH/CRITICAL sessions will appear here.
+          </div>
+        )}
+        {live && !loading && alerts.length === 0 && (
+          <div style={{ padding: '32px', textAlign: 'center', color: '#3a4e78', fontSize: 13 }}>
+            No HIGH/CRITICAL alerts — all analyzed calls are within safe bounds.
+          </div>
+        )}
         <div style={{
           display: 'grid', gridTemplateColumns: '100px 1fr 80px 100px 130px 80px',
           padding: '8px 20px', borderBottom: '1px solid #18234a',

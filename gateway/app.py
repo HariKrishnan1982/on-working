@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 import soundfile as sf
 
 from configs.settings import settings
+from gateway.live_gateway import router as live_router
 from gateway.ops_api import record_session, router as ops_router
 from gateway.session import create_session
 from schemas.models import (
@@ -70,6 +71,15 @@ app.add_middleware(
 
 # Operations / dashboard API consumed by frontend/
 app.include_router(ops_router)
+
+# Real-time voice gateway: WebRTC media + WS events over existing pipeline.
+app.include_router(live_router)
+
+# Telephony ingress: SIP/RTP + provider media streams feeding the same
+# live-session/window processor (transport layer only, no second pipeline).
+from gateway.telephony_api import router as telephony_router
+
+app.include_router(telephony_router)
 
 pipeline_service = PipelineService()
 

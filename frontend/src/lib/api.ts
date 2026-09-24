@@ -357,3 +357,183 @@ export function enrollUser(params: {
   for (const f of params.samples) form.append('samples', f, f.name);
   return request<EnrollResult>('/api/v1/users', { method: 'POST', body: form });
 }
+
+// ─── Real-time voice gateway (gateway/live_gateway.py) ─────────────────────
+// Backend-authoritative live session state. The frontend never invents these
+// values: every field below is produced by the gateway from a real
+// microphone → WebRTC → adapter → windowed-pipeline flow. No synthetic
+// audio, scores, or statuses exist anywhere in this surface.
+
+export interface LiveWindow {
+  window_index: number;
+  audio_s: number;
+  risk_level: string;
+  action: string;
+  risk_score_100: number;
+  detection_summary: string;
+  started_at: string;
+  finished_at: string;
+  latency_ms: number;
+}
+
+export interface LiveSessionSnapshot {
+  session_id: string;
+  state: string;
+  caller_id: string;
+  claimed_identity: string | null;
+  language_hint: string;
+  /** Audio transport: "webrtc" (browser mic) or telephony ("local-rtp", "provider-media-stream"). */
+  transport: string;
+  telephony_call_id: string | null;
+  created_at: string;
+  connected_at: string | null;
+  first_audio_at: string | null;
+  ended_at: string | null;
+  audio_samples_received: number;
+  audio_seconds_received: number;
+  windows_processed: number;
+  windows: LiveWindow[];
+  final_status: 'none' | 'processing' | 'complete' | 'failed';
+  final_error: string | null;
+  result_session_id: string | null;
+  error: string | null;
+}
+
+/** Typed live event pushed by WS /api/v1/live/sessions/{id}/events. */
+export interface LiveEvent {
+  type:
+    | 'session.state'
+    | 'session.created'
+    | 'session.connected'
+    | 'audio.receiving'
+    | 'analysis.started'
+    | 'analysis.completed'
+    | 'session.ended'
+    | 'session.error';
+  session_id: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export function createLiveSession(params: {
+  callerId: string;
+  claimedIdentity?: string;
+  languageHint?: string;
+}): Promise<LiveSessionSnapshot> {
+  return request<LiveSessionSnapshot>('/api/v1/live/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      caller_id: params.callerId,
+      claimed_identity: params.claimedIdentity || null,
+      language_hint: params.languageHint || 'EN',
+    }),
+  });
+}
+
+export function getLiveSession(sessionId: string): Promise<LiveSessionSnapshot> {
+  return request<LiveSessionSnapshot>(
+    `/api/v1/live/sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export function postLiveOffer(
+  sessionId: string,
+  sdp: string,
+  type: string,
+): Promise<{ sdp: string; type: string; session_id: string }> {
+  return request(`/api/v1/live/sessions/${encodeURIComponent(sessionId)}/offer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sdp, type }),
+  });
+}
+
+export function endLiveSession(sessionId: string): Promise<LiveSessionSnapshot> {
+  return request<LiveSessionSnapshot>(
+    `/api/v1/live/sessions/${encodeURIComponent(sessionId)}/end`,
+    { method: 'POST' },
+  );
+}
+
+/** Derive the WS events URL from the HTTP API base (no hardcoded ports). */
+export function liveEventsUrl(sessionId: string): string {
+  const wsBase = API_BASE.replace(/^http/, 'ws');
+  return `${wsBase}/api/v1/live/sessions/${encodeURIComponent(sessionId)}/events`;
+}
+
+// ─── Telephony ingress (gateway/telephony_api.py) ──────────────────────────
+// Backend-authoritative telephony call state. Raw phone numbers never appear
+// here — only masked display forms and HMAC pseudonyms. When no provider or
+// media source is active, the backend reports it and the UI shows the
+// configuration/unavailable state (never demo calls).
+
+export interface TelephonyCallStats {
+  packets_received: number;
+  packets_lost: number;
+  packets_dropped: number;
+  bytes_received: number;
+  discontinuities: number;
+  jitter_max_ms: number;
+  codec: string | null;
+}
+
+export interface TelephonyCall {
+  session_id: string;
+  telephony_call_id: string;
+  transport: string;
+  live_session_id: string;
+  caller_ref: string | null;
+  caller_display: string;
+  called_number: string | null;
+  claimed_identity: string | null;
+  state: string;
+  created_at: string;
+  accepted_at: string | null;
+  media_connected_at: string | null;
+  first_audio_at: string | null;
+  ended_at: string | null;
+  termination_reason: string | null;
+  error: string | null;
+  audio_seconds: number;
+  /** Most recent real decision action (window or final), or null when no analysis yet. */
+  latest_action: string | null;
+  result_session_id: string | null;
+  stats: TelephonyCallStats;
+}
+
+export interface AriStatus {
+  configured: boolean;
+  state: string;
+  app: string;
+  url: string;
+  connected_at: number | null;
+  last_error: string | null;
+  last_error_at: number | null;
+  active_taps: number;
+}
+
+export interface TelephonyStatus {
+  provider: string | null;
+  provider_configured: boolean;
+  ari: AriStatus;
+  transports: {
+    local_rtp: { enabled: boolean; listening: boolean; host: string; port: number };
+    provider_media_stream: { available: boolean };
+  };
+  timestamp: number;
+}
+
+export function getTelephonyStatus(): Promise<TelephonyStatus> {
+  return request<TelephonyStatus>('/api/v1/telephony/status');
+}
+
+export function listTelephonyCalls(): Promise<{ total: number; calls: TelephonyCall[] }> {
+  return request<{ total: number; calls: TelephonyCall[] }>('/api/v1/telephony/calls');
+}
+
+export function getTelephonyCall(sessionId: string): Promise<TelephonyCall> {
+  return request<TelephonyCall>(
+    `/api/v1/telephony/calls/${encodeURIComponent(sessionId)}`,
+  );
+}

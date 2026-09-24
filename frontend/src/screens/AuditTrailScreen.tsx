@@ -59,10 +59,18 @@ export default function AuditTrailScreen({ navigate: _navigate }: { navigate: Na
         padding: '10px 16px', borderRadius: 8, marginBottom: 20,
         background: '#080e28', border: '1px solid #4080f830',
       }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4080f8', boxShadow: '0 0 6px #4080f870' }} />
-        <span style={{ fontSize: 12, color: '#4080f8', fontWeight: 600 }}>HYPERLEDGER FABRIC</span>
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: source === 'postgres_hash_chain' ? '#4080f8' : '#f5a020',
+          boxShadow: '0 0 6px #4080f870',
+        }} />
+        <span style={{ fontSize: 12, color: source === 'postgres_hash_chain' ? '#4080f8' : '#f5a020', fontWeight: 600 }}>
+          {source === 'postgres_hash_chain' ? 'HYPERLEDGER FABRIC' : 'LOCAL AUDIT FALLBACK — FABRIC OFFLINE'}
+        </span>
         <span style={{ fontSize: 12, color: '#3a4e78' }}>·</span>
-        <span style={{ fontSize: 12, color: '#6280b8' }}>Channel: fraud-channel</span>
+        <span style={{ fontSize: 12, color: '#6280b8' }}>
+          {source === 'postgres_hash_chain' ? 'Channel: fraud-channel' : 'anchor_pending — not yet written to Fabric'}
+        </span>
         <span style={{ fontSize: 12, color: '#3a4e78' }}>·</span>
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#6280b8' }}>{records.length} records loaded</span>
         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: chainVerified ? '#20d870' : '#f03838' }}>
